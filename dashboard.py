@@ -6,9 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 from datetime import datetime, timedelta
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import warnings
+warnings.filterwarnings('ignore')
 
 # Set page configuration
 st.set_page_config(
@@ -51,24 +50,79 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load data and models
+# Load data and models with robust error handling
 @st.cache_data
 def load_data():
+    data_loaded = False
+    results_df, processed_df, model, scaler, feature_names = None, None, None, None, None
+    
     try:
+        # Load prediction results
         results_df = pd.read_csv('model_predictions_results.csv')
         results_df['Date'] = pd.to_datetime(results_df['Date'])
+        st.success("✓ Loaded prediction results")
         
+        # Load original processed data for context
         processed_df = pd.read_csv('dahi_plant_processed.csv')
         processed_df['Date'] = pd.to_datetime(processed_df['Date'])
+        st.success("✓ Loaded processed data")
         
-        model = joblib.load('high_waste_predictor_model.pkl')
-        scaler = joblib.load('scaler.pkl')
-        feature_names = joblib.load('feature_names.pkl')
+        # Try different possible filenames for model files
+        model_filenames = [
+            'high_waste_predictor_model.pkl',
+            'high_waste_predictor_model.pld',  # Your actual filename
+            'high_waste_predictor_model.plx'
+        ]
         
-        return results_df, processed_df, model, scaler, feature_names
+        scaler_filenames = [
+            'scaler.pkl',
+            'scaler.pld',  # Your actual filename
+            'scaler.plx'
+        ]
+        
+        feature_filenames = [
+            'feature_names.pkl',
+            'feature_names.pld',  # Your actual filename
+            'feature_names.plx'
+        ]
+        
+        # Load model
+        model = None
+        for filename in model_filenames:
+            try:
+                model = joblib.load(filename)
+                st.success(f"✓ Loaded model from {filename}")
+                break
+            except FileNotFoundError:
+                continue
+        
+        # Load scaler
+        scaler = None
+        for filename in scaler_filenames:
+            try:
+                scaler = joblib.load(filename)
+                st.success(f"✓ Loaded scaler from {filename}")
+                break
+            except FileNotFoundError:
+                continue
+        
+        # Load feature names
+        feature_names = None
+        for filename in feature_filenames:
+            try:
+                feature_names = joblib.load(filename)
+                st.success(f"✓ Loaded feature names from {filename}")
+                break
+            except FileNotFoundError:
+                continue
+        
+        if model is not None and results_df is not None:
+            data_loaded = True
+            
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        return None, None, None, None, None
+    
+    return results_df, processed_df, model, scaler, feature_names, data_loaded
 
 # Main dashboard
 def main():
@@ -76,10 +130,29 @@ def main():
     st.markdown('<h1 class="main-header">🏭 Nestlé Dahi Plant Waste Prediction Dashboard</h1>', unsafe_allow_html=True)
     
     # Load data
-    results_df, processed_df, model, scaler, feature_names = load_data()
+    results_df, processed_df, model, scaler, feature_names, data_loaded = load_data()
     
-    if results_df is None:
-        st.error("Please run Phases 1-3 first to generate the required data files.")
+    if not data_loaded:
+        st.error("""
+        ❌ Required data files not found! 
+        
+        Please make sure you have these files in the same directory:
+        - `model_predictions_results.csv` (from Phase 3)
+        - `dahi_plant_processed.csv` (from Phase 1)
+        - `high_waste_predictor_model.pld` (your model file)
+        - `scaler.pld` (your scaler file) 
+        - `feature_names.pld` (your feature names file)
+        
+        Run Phases 1-3 first to generate these files.
+        """)
+        
+        # Show available files for debugging
+        import os
+        st.subheader("Available files in current directory:")
+        available_files = [f for f in os.listdir('.') if os.path.isfile(f)]
+        for file in available_files:
+            st.write(f"• {file}")
+        
         return
     
     # Sidebar
@@ -143,10 +216,14 @@ def main():
             st.metric("Model Accuracy", f"{accuracy:.1%}")
         
         with col4:
-            cost_savings = (high_waste_avg - filtered_df[filtered_df['Is_High_Waste'] == 0]['Total_Waste_kg'].mean()) * 100 * high_waste_days
+            normal_waste_avg = filtered_df[filtered_df['Is_High_Waste'] == 0]['Total_Waste_kg'].mean()
+            cost_savings = (high_waste_avg - normal_waste_avg) * 100 * high_waste_days
             st.metric("Potential Savings", f"₹{cost_savings:,.0f}")
         
         # Waste trend chart
+        import plotly.express as px
+        import plotly.graph_objects as go
+        
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=filtered_df['Date'], 
@@ -166,121 +243,34 @@ def main():
             annotation_position="bottom right"
         )
         
-        # Highlight prediction errors
-        false_negatives = filtered_df[(filtered_df['Is_High_Waste'] == 1) & (filtered_df['Predicted_High_Waste'] == 0)]
-        false_positives = filtered_df[(filtered_df['Is_High_Waste'] == 0) & (filtered_df['Predicted_High_Waste'] == 1)]
-        
-        if len(false_negatives) > 0:
-            fig.add_trace(go.Scatter(
-                x=false_negatives['Date'],
-                y=false_negatives['Total_Waste_kg'],
-                mode='markers',
-                name='False Negatives',
-                marker=dict(color='orange', size=10, symbol='x')
-            ))
-        
-        if len(false_positives) > 0:
-            fig.add_trace(go.Scatter(
-                x=false_positives['Date'],
-                y=false_positives['Total_Waste_kg'],
-                mode='markers',
-                name='False Positives',
-                marker=dict(color='purple', size=10, symbol='circle')
-            ))
-        
         fig.update_layout(
-            title='Waste Trends with Prediction Performance',
+            title='Waste Trends Over Time',
             xaxis_title='Date',
-            yaxis_title='Total Waste (kg)',
+            yaxis_title='Waste (kg)',
             height=400,
             showlegend=True
         )
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # Feature importance
-        if model and feature_names:
-            feature_importance = pd.DataFrame({
-                'Feature': feature_names,
-                'Coefficient': model.coef_[0],
-                'Impact': np.abs(model.coef_[0])
-            }).sort_values('Impact', ascending=True)
-            
-            fig = go.Figure(go.Bar(
-                y=feature_importance['Feature'],
-                x=feature_importance['Coefficient'],
-                orientation='h',
-                marker_color=['green' if x > 0 else 'red' for x in feature_importance['Coefficient']]
-            ))
-            
-            fig.update_layout(
-                title='Key Risk Factors (Positive = Increases Risk)',
-                xaxis_title='Impact on High-Waste Probability',
-                height=300,
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-    
+        # Basic insights
+        st.subheader("Key Insights")
+        
+        if 'Day_of_Week' not in filtered_df.columns:
+            filtered_df['Day_of_Week'] = filtered_df['Date'].dt.day_name()
+        
+        most_common_high_day = filtered_df[filtered_df['Is_High_Waste'] == 1]['Day_of_Week'].mode()
+        if len(most_common_high_day) > 0:
+            st.info(f"📅 **Most common high-waste day**: {most_common_high_day[0]}")
+        
+        st.info(f"💰 **Potential monthly savings**: ₹{cost_savings:,.0f}")
+        st.info(f"🎯 **Model reliability**: {'Excellent' if accuracy > 0.8 else 'Good' if accuracy > 0.7 else 'Needs improvement'}")
+
     with tab2:
         st.header("Prediction Details")
         
-        # Prediction performance
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Confusion matrix
-            cm = np.zeros((2, 2))
-            if len(filtered_df) > 0:
-                tn = len(filtered_df[(filtered_df['Is_High_Waste'] == 0) & (filtered_df['Predicted_High_Waste'] == 0)])
-                fp = len(filtered_df[(filtered_df['Is_High_Waste'] == 0) & (filtered_df['Predicted_High_Waste'] == 1)])
-                fn = len(filtered_df[(filtered_df['Is_High_Waste'] == 1) & (filtered_df['Predicted_High_Waste'] == 0)])
-                tp = len(filtered_df[(filtered_df['Is_High_Waste'] == 1) & (filtered_df['Predicted_High_Waste'] == 1)])
-                
-                fig = go.Figure(data=go.Heatmap(
-                    z=[[tn, fp], [fn, tp]],
-                    x=['Predicted Normal', 'Predicted High'],
-                    y=['Actual Normal', 'Actual High'],
-                    colorscale='Blues',
-                    text=[[f"TN: {tn}", f"FP: {fp}"], [f"FN: {fn}", f"TP: {tp}"]],
-                    texttemplate="%{text}",
-                    textfont={"size": 16}
-                ))
-                
-                fig.update_layout(
-                    title='Confusion Matrix',
-                    height=300
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Accuracy by day of week
-            if 'Day_of_Week' not in filtered_df.columns:
-                filtered_df['Day_of_Week'] = filtered_df['Date'].dt.day_name()
-            
-            accuracy_by_day = filtered_df.groupby('Day_of_Week')['Correct_Prediction'].mean()
-            day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            accuracy_by_day = accuracy_by_day.reindex(day_order)
-            
-            fig = go.Figure(go.Bar(
-                x=accuracy_by_day.index,
-                y=accuracy_by_day.values,
-                marker_color='lightblue'
-            ))
-            
-            fig.update_layout(
-                title='Prediction Accuracy by Day of Week',
-                xaxis_title='Day of Week',
-                yaxis_title='Accuracy',
-                yaxis_tickformat='.0%',
-                height=300
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        
         # Detailed predictions table
-        st.subheader("Detailed Predictions")
+        st.subheader("Daily Predictions")
         display_df = filtered_df[['Date', 'Total_Waste_kg', 'Is_High_Waste', 'Predicted_High_Waste', 'Prediction_Probability', 'Correct_Prediction']].copy()
         display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
         display_df['Is_High_Waste'] = display_df['Is_High_Waste'].map({1: 'Yes', 0: 'No'})
@@ -301,137 +291,75 @@ def main():
             hide_index=True,
             use_container_width=True
         )
-    
+
     with tab3:
         st.header("Advanced Analytics")
         
-        col1, col2 = st.columns(2)
+        # Waste distribution
+        fig = px.histogram(
+            filtered_df, 
+            x='Total_Waste_kg',
+            nbins=20,
+            title='Distribution of Daily Waste',
+            labels={'Total_Waste_kg': 'Waste (kg)'}
+        )
+        fig.add_vline(x=threshold, line_dash="dash", line_color="red")
+        st.plotly_chart(fig, use_container_width=True)
         
-        with col1:
-            # Waste distribution
-            fig = px.histogram(
-                filtered_df, 
-                x='Total_Waste_kg',
-                nbins=20,
-                title='Distribution of Daily Waste',
-                labels={'Total_Waste_kg': 'Waste (kg)'}
-            )
-            fig.add_vline(x=threshold, line_dash="dash", line_color="red")
-            st.plotly_chart(fig, use_container_width=True)
+        # Accuracy by day of week
+        accuracy_by_day = filtered_df.groupby('Day_of_Week')['Correct_Prediction'].mean()
+        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        accuracy_by_day = accuracy_by_day.reindex(day_order)
         
-        with col2:
-            # Prediction confidence
-            fig = px.histogram(
-                filtered_df,
-                x='Prediction_Probability',
-                color='Correct_Prediction',
-                nbins=20,
-                title='Prediction Confidence Distribution',
-                labels={'Prediction_Probability': 'Prediction Probability'},
-                color_discrete_map={1: 'green', 0: 'red'}
-            )
-            fig.add_vline(x=0.5, line_dash="dash", line_color="black")
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Time series analysis
-        st.subheader("Time Series Analysis")
-        
-        # Rolling average
-        filtered_df['7D_Avg'] = filtered_df['Total_Waste_kg'].rolling(window=7).mean()
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=filtered_df['Date'],
-            y=filtered_df['Total_Waste_kg'],
-            name='Daily Waste',
-            line=dict(color='lightblue', width=1)
+        fig = go.Figure(go.Bar(
+            x=accuracy_by_day.index,
+            y=accuracy_by_day.values,
+            marker_color='lightblue'
         ))
-        fig.add_trace(go.Scatter(
-            x=filtered_df['Date'],
-            y=filtered_df['7D_Avg'],
-            name='7-Day Average',
-            line=dict(color='blue', width=3)
-        ))
-        fig.add_hline(y=threshold, line_dash="dash", line_color="red")
         
         fig.update_layout(
-            title='Waste Trends with 7-Day Moving Average',
-            xaxis_title='Date',
-            yaxis_title='Waste (kg)',
+            title='Prediction Accuracy by Day of Week',
+            xaxis_title='Day of Week',
+            yaxis_title='Accuracy',
+            yaxis_tickformat='.0%',
             height=400
         )
         
         st.plotly_chart(fig, use_container_width=True)
-    
+
     with tab4:
         st.header("Actionable Recommendations")
         
-        # Calculate insights
-        high_waste_days = filtered_df[filtered_df['Is_High_Waste'] == 1]
-        if len(high_waste_days) > 0:
-            most_common_day = high_waste_days['Date'].dt.day_name().mode()[0]
-        
-        # Recommendations
-        st.markdown("""
-        <div class="insight-box">
-            <h3>🎯 Key Insights</h3>
-            <ul>
-                <li>Model accuracy: <strong>{accuracy:.1%}</strong></li>
-                <li>Most problematic day: <strong>{most_common_day}</strong></li>
-                <li>Potential monthly savings: <strong>₹{savings:,.0f}</strong></li>
-            </ul>
-        </div>
-        """.format(
-            accuracy=accuracy,
-            most_common_day=most_common_day if len(high_waste_days) > 0 else "N/A",
-            savings=cost_savings
-        ), unsafe_allow_html=True)
-        
-        # Top recommendations
-        st.subheader("Top Recommendations")
-        
         st.markdown("""
         <div class="recommendation">
-            <h4>1. Focus on {top_feature}</h4>
-            <p>This is your biggest risk factor for high waste days. Implement additional monitoring and quality checks.</p>
-        </div>
-        """.format(top_feature=feature_names[0] if feature_names else "Key Factors"), unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div class="recommendation">
-            <h4>2. Enhance {worst_day} Operations</h4>
-            <p>Prediction accuracy is lowest on this day. Consider additional staffing or process reviews.</p>
-        </div>
-        """.format(worst_day=accuracy_by_day.idxmin() if len(accuracy_by_day) > 0 else "Critical Days"), unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div class="recommendation">
-            <h4>3. Implement Predictive Monitoring</h4>
+            <h4>🎯 1. Implement Predictive Monitoring</h4>
             <p>Use the model's daily predictions to allocate resources more effectively on high-risk days.</p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Action plan
-        st.subheader("30-Day Action Plan")
+        st.markdown("""
+        <div class="recommendation">
+            <h4>📊 2. Focus on High-Risk Days</h4>
+            <p>Increase quality checks and monitoring on days with predicted high waste probability.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        action_plan = [
-            {"Week": "Week 1", "Task": "Train team on interpreting predictions", "Owner": "Plant Manager"},
-            {"Week": "Week 2", "Task": "Implement enhanced checks on high-risk days", "Owner": "Quality Team"},
-            {"Week": "Week 3", "Task": "Review processes for top risk factors", "Owner": "Process Engineer"},
-            {"Week": "Week 4", "Task": "Measure impact and adjust strategy", "Owner": "Data Analyst"}
-        ]
-        
-        st.table(pd.DataFrame(action_plan))
+        st.markdown("""
+        <div class="recommendation">
+            <h4>💰 3. Track Financial Impact</h4>
+            <p>Monitor actual savings achieved through predictive interventions.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Download report
         st.download_button(
-            label="📄 Download Full Report",
-            data=generate_report(filtered_df, accuracy, cost_savings, feature_names),
+            label="📄 Download Summary Report",
+            data=generate_report(filtered_df, accuracy, cost_savings),
             file_name="nestle_waste_report.md",
             mime="text/markdown"
         )
 
-def generate_report(df, accuracy, savings, feature_names):
+def generate_report(df, accuracy, savings):
     report = f"""
 # Nestlé Dahi Plant Waste Prediction Report
 
@@ -440,19 +368,10 @@ def generate_report(df, accuracy, savings, feature_names):
 - **Potential Monthly Savings**: ₹{savings:,.0f}
 - **High-Waste Days Identified**: {len(df[df['Is_High_Waste'] == 1])}
 
-## Key Findings
-1. Top risk factor: {feature_names[0] if feature_names else 'N/A'}
-2. Average waste reduction potential: {df[df['Is_High_Waste'] == 1]['Total_Waste_kg'].mean() - df[df['Is_High_Waste'] == 0]['Total_Waste_kg'].mean():.1f} kg per high-waste day
-
-## Recommendations
+## Key Recommendations
 1. Implement predictive monitoring system
 2. Focus resources on high-risk days
-3. Review processes related to top risk factors
-
-## Next Steps
-- Expand analysis with production volume data
-- Implement real-time dashboard
-- Continuous model improvement
+3. Review processes for continuous improvement
 
 Report generated on: {datetime.now().strftime('%Y-%m-%d')}
 """
