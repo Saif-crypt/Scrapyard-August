@@ -181,18 +181,18 @@ def main():
             filtered_df = results_df
         
         # Display quick stats in sidebar
-        st.subheader("Quick Stats")
-        total_days = len(filtered_df)
-        high_waste_days = len(filtered_df[filtered_df['Is_High_Waste'] == 1])
-        accuracy = filtered_df['Correct_Prediction'].mean()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Days", total_days)
-        with col2:
-            st.metric("High-Waste Days", high_waste_days)
-        
-        st.metric("Prediction Accuracy", f"{accuracy:.1%}")
+st.subheader("Quick Stats")
+total_days = len(filtered_df)
+high_waste_days = len(filtered_df[filtered_df['Is_High_Waste'] == 1])
+accuracy = filtered_df['Correct_Prediction'].mean()
+
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("Total Days", total_days)
+with col2:
+    st.metric("High-Waste Days", high_waste_days)
+
+st.metric("Prediction Accuracy", f"{accuracy:.1%}")
     
     # Main content
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "🔍 Predictions", "📈 Analytics", "🎯 Recommendations"])
@@ -327,29 +327,38 @@ def main():
         
         st.plotly_chart(fig, use_container_width=True)
 
-    with tab4:
-        st.header("Actionable Recommendations")
-        
-        st.markdown("""
-        <div class="recommendation">
-            <h4>🎯 1. Implement Predictive Monitoring</h4>
-            <p>Use the model's daily predictions to allocate resources more effectively on high-risk days.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div class="recommendation">
-            <h4>📊 2. Focus on High-Risk Days</h4>
-            <p>Increase quality checks and monitoring on days with predicted high waste probability.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div class="recommendation">
-            <h4>💰 3. Track Financial Impact</h4>
-            <p>Monitor actual savings achieved through predictive interventions.</p>
-        </div>
-        """, unsafe_allow_html=True)
+   with tab4:
+    st.header("Actionable Recommendations")
+    
+    # Calculate actual values for recommendations
+    high_waste_count = len(filtered_df[filtered_df['Is_High_Waste'] == 1])
+    avg_high_waste = filtered_df[filtered_df['Is_High_Waste'] == 1]['Total_Waste_kg'].mean()
+    avg_normal_waste = filtered_df[filtered_df['Is_High_Waste'] == 0]['Total_Waste_kg'].mean()
+    potential_savings_per_day = (avg_high_waste - avg_normal_waste) * 100  # ₹100 per kg
+    
+    st.markdown(f"""
+    <div class="recommendation">
+        <h4>🎯 1. Implement Predictive Monitoring</h4>
+        <p>Use the model's daily predictions to allocate resources more effectively on high-risk days. 
+        The model has identified <b>{high_waste_count}</b> high-waste days with <b>{accuracy:.1%}</b> accuracy.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+    <div class="recommendation">
+        <h4>📊 2. Focus on High-Risk Days</h4>
+        <p>Increase quality checks by 50% on predicted high-waste days. 
+        High-waste days average <b>{avg_high_waste:.1f} kg</b> compared to <b>{avg_normal_waste:.1f} kg</b> on normal days.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+    <div class="recommendation">
+        <h4>💰 3. Track Financial Impact</h4>
+        <p>Monitor savings of up to <b>₹{potential_savings_per_day:,.0f}</b> per high-waste day through predictive interventions.
+        Potential monthly savings: <b>₹{potential_savings_per_day * high_waste_count:,.0f}</b>.</p>
+    </div>
+    """, unsafe_allow_html=True)
         
         # Download report
         st.download_button(
@@ -360,20 +369,49 @@ def main():
         )
 
 def generate_report(df, accuracy, savings):
+    high_waste_count = len(df[df['Is_High_Waste'] == 1])
+    avg_high_waste = df[df['Is_High_Waste'] == 1]['Total_Waste_kg'].mean()
+    avg_normal_waste = df[df['Is_High_Waste'] == 0]['Total_Waste_kg'].mean()
+    
     report = f"""
 # Nestlé Dahi Plant Waste Prediction Report
 
 ## Executive Summary
 - **Model Accuracy**: {accuracy:.1%}
+- **High-Waste Days Identified**: {high_waste_count}
+- **Average High Waste**: {avg_high_waste:.1f} kg/day
+- **Average Normal Waste**: {avg_normal_waste:.1f} kg/day
 - **Potential Monthly Savings**: ₹{savings:,.0f}
-- **High-Waste Days Identified**: {len(df[df['Is_High_Waste'] == 1])}
 
-## Key Recommendations
-1. Implement predictive monitoring system
-2. Focus resources on high-risk days
-3. Review processes for continuous improvement
+## Key Findings
+- Waste reduction potential: {avg_high_waste - avg_normal_waste:.1f} kg per high-waste day
+- Most accurate predictions on: {df.groupby('Day_of_Week')['Correct_Prediction'].mean().idxmax()}
+- Overall model reliability: {'Excellent' if accuracy > 0.8 else 'Good' if accuracy > 0.7 else 'Needs improvement'}
 
-Report generated on: {datetime.now().strftime('%Y-%m-%d')}
+## Actionable Recommendations
+
+### 1. Implement Predictive Monitoring
+- Use daily predictions for resource allocation
+- Focus on days with >60% prediction probability
+- Establish baseline metrics for comparison
+
+### 2. Enhance High-Risk Day Procedures
+- Increase quality checks by 50% on predicted high-waste days
+- Review equipment calibration before high-risk periods
+- Assign senior staff to monitor critical processes
+
+### 3. Financial Impact Tracking
+- Monitor actual vs predicted savings
+- Set target of ₹{savings//2:,.0f} monthly savings initially
+- Report savings to management weekly
+
+## Next Steps
+1. Validate model with production volume data
+2. Expand to include specific waste materials
+3. Implement real-time monitoring dashboard
+4. Train operational team on using predictions
+
+Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 """
     return report
 
