@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS - USE THIS INSTEAD (Darker backgrounds)
 st.markdown("""
 <style>
     .main-header {
@@ -27,25 +27,36 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .metric-card {
-        background-color: #f8f9fa;
+        background-color: #2c3e50;
         padding: 1rem;
         border-radius: 10px;
-        border-left: 4px solid #0066CC;
+        border-left: 4px solid #3498db;
         margin-bottom: 1rem;
+        color: white;
     }
     .insight-box {
-        background-color: #e8f4f8;
+        background-color: #34495e;
         padding: 1rem;
         border-radius: 10px;
-        border-left: 4px solid #00A0E3;
+        border-left: 4px solid #2ecc71;
         margin: 1rem 0;
+        color: white;
     }
     .recommendation {
-        background-color: #fff3cd;
+        background-color: #2c3e50;
         padding: 1rem;
         border-radius: 10px;
-        border-left: 4px solid #ffc107;
+        border-left: 4px solid #f39c12;
         margin: 0.5rem 0;
+        color: white;
+    }
+    .recommendation h4 {
+        color: #f39c12;
+        margin-bottom: 0.5rem;
+    }
+    .recommendation p {
+        color: #ecf0f1;
+        margin: 0;
     }
 </style>
 """, unsafe_allow_html=True)
